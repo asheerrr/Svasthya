@@ -1,0 +1,14 @@
+backend/
+│
+├── main.py
+├── database.py
+├── models.py
+├── requirements.txt
+│
+├── routers/
+│   ├── __init__.py
+│   ├── hospital.py
+│   └── profile.py
+│
+└── data/
+    └── hospitals.csv
