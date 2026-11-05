@@ -4,7 +4,6 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from pydantic import BaseModel, EmailStr, Field
 
 from ..database import get_db
@@ -61,18 +60,21 @@ class HospitalResponse(BaseModel):
 
 # --- Endpoints ---
 
-@post("/", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
 def create_hospital(
     hospital_data: HospitalCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin"))
 ):
     """Admin only: Add a new hospital."""
-    existing = db.query(Hospital).filter(Hospital.hospital_name == hospital_data.hospital_name, Hospital.city == hospital_data.city).first()
+    existing = db.query(Hospital).filter(
+        Hospital.hospital_name == hospital_data.hospital_name, 
+        Hospital.city == hospital_data.city
+    ).first()
     if existing:
         raise HTTPException(status_code=400, detail="A hospital with this name and city already exists.")
 
-    new_hospital = Hospital(**hospital_data.dict(), is_active=True)
+    new_hospital = Hospital(**hospital_data.model_dump(), is_active=True)
     db.add(new_hospital)
     db.commit()
     db.refresh(new_hospital)
@@ -81,7 +83,7 @@ def create_hospital(
     return new_hospital
 
 
-@get("/", response_model=List[HospitalResponse])
+@router.get("/", response_model=List[HospitalResponse])
 def list_hospitals(
     search: Optional[str] = Query(None, description="Search by hospital name"),
     city: Optional[str] = Query(None, description="Filter by city"),
@@ -90,12 +92,11 @@ def list_hospitals(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)  # Optional or public view handling
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Public/Authenticated view: Search and filter hospitals with pagination."""
     query = db.query(Hospital)
 
-    # Public users see only active hospitals
     if not current_user or current_user.role == "patient":
         query = query.filter(Hospital.is_active == True)
 
@@ -111,7 +112,7 @@ def list_hospitals(
     return query.offset(skip).limit(limit).all()
 
 
-@get("/{hospital_id}", response_model=HospitalResponse)
+@router.get("/{hospital_id}", response_model=HospitalResponse)
 def get_hospital_details(
     hospital_id: int,
     db: Session = Depends(get_db),
@@ -128,7 +129,7 @@ def get_hospital_details(
     return hospital
 
 
-@put("/{hospital_id}", response_model=HospitalResponse)
+@router.put("/{hospital_id}", response_model=HospitalResponse)
 def update_hospital(
     hospital_id: int,
     update_data: HospitalUpdate,
@@ -140,7 +141,7 @@ def update_hospital(
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found.")
 
-    update_dict = update_data.dict(exclude_unset=True)
+    update_dict = update_data.model_dump(exclude_unset=True)
     for key, value in update_dict.items():
         setattr(hospital, key, value)
 
@@ -151,7 +152,7 @@ def update_hospital(
     return hospital
 
 
-@delete("/{hospital_id}", status_code=status.HTTP_200_OK)
+@router.delete("/{hospital_id}", status_code=status.HTTP_200_OK)
 def deactivate_hospital(
     hospital_id: int,
     db: Session = Depends(get_db),
@@ -169,13 +170,13 @@ def deactivate_hospital(
     return {"message": f"Hospital '{hospital.hospital_name}' has been deactivated successfully."}
 
 
-@post("/load-csv", status_code=status.HTTP_200_OK)
+@router.post("/load-csv", status_code=status.HTTP_200_OK)
 async def load_hospitals_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin"))
 ):
-    """Admin only: Bulk import hospitals via backend/data/hospitals.csv format."""
+    """Admin only: Bulk import hospitals via CSV format."""
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Invalid file format. Only CSV files are accepted.")
 
@@ -198,7 +199,6 @@ async def load_hospitals_csv(
                 invalid_rows.append({"row": row_idx, "reason": "Missing hospital_name or city"})
                 continue
 
-            # Check duplicate
             existing = db.query(Hospital).filter(Hospital.hospital_name == name, Hospital.city == city).first()
             if existing:
                 invalid_rows.append({"row": row_idx, "reason": f"Duplicate hospital '{name}' in '{city}'"})
@@ -229,5 +229,5 @@ async def load_hospitals_csv(
         "successfully_imported": success_count,
         "failed_rows_count": len(invalid_rows),
         "invalid_rows": invalid_rows
-  }
-  
+    }
+    
