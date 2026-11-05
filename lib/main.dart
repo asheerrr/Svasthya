@@ -1,5 +1,5 @@
  import 'package:flutter/material.dart';
-
+ import 'hospital_map_page.dart';
 void main() {
   runApp(const SwasthyaApp());
 }
